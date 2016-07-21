@@ -309,14 +309,16 @@ class ActiveRecord::Base
     # * num_inserts - the number of insert statements it took to import the data
     # * ids - the primary keys of the imported ids, if the adpater supports it, otherwise and empty array.
     def import(*args)
-      if args.first.is_a?( Array ) && args.first.first.is_a?(ActiveRecord::Base)
-        options = {}
-        options.merge!( args.pop ) if args.last.is_a?(Hash)
+      ActiveRecord::Base.transaction do
+        if args.first.is_a?( Array ) && args.first.first.is_a?(ActiveRecord::Base)
+          options = {}
+          options.merge!( args.pop ) if args.last.is_a?(Hash)
 
-        models = args.first
-        import_helper(models, options)
-      else
-        import_helper(*args)
+          models = args.first
+          import_helper(models, options)
+        else
+          import_helper(*args)
+        end
       end
     end
 
@@ -388,12 +390,23 @@ class ActiveRecord::Base
         add_special_rails_stamps column_names, array_of_attributes, options
       end
 
+      # add to the transaction records array
+      if models
+        models.each |model|
+          current_transaction.add_record(model)
+        end
+      end
+
       return_obj = if is_validating
         if models
           import_with_validations( column_names, array_of_attributes, options ) do |failed|
             models.each_with_index do |model, i|
               model = model.dup if options[:recursive]
-              next if model.valid?(options[:validate_with_context])
+
+              if model.valid?(options[:validate_with_context])
+                current_transaction.add_record(model)
+                next
+              end
               model.send(:raise_record_invalid) if options[:raise_error]
               array_of_attributes[i] = nil
               failed << model
@@ -449,7 +462,10 @@ class ActiveRecord::Base
         model = new
         arr.each_with_index do |hsh, i|
           hsh.each_pair { |k, v| model[k] = v }
-          next if model.valid?(options[:validate_with_context])
+          if model.valid?(options[:validate_with_context])
+            current_transaction.add_record(model)
+            next
+          end
           raise(ActiveRecord::RecordInvalid, model) if options[:raise_error]
           array_of_attributes[i] = nil
           failed_instances << model.dup
