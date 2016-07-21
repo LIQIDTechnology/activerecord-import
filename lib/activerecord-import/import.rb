@@ -393,7 +393,6 @@ class ActiveRecord::Base
       # add to the transaction records array
       if models
         models.each do |model|
-          binding.pry
           connection.current_transaction.add_record(model)
         end
       end

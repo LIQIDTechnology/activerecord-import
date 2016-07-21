@@ -146,6 +146,16 @@ describe "#import" do
         results = Topic.import columns, mixed_values, all_or_none: true
         assert_equal 0, results.num_inserts
       end
+
+      it 'should add generated models to AR transaction.records' do
+        ActiveRecord::Base.transaction do
+          Topic.import columns, valid_values, all_or_none: true
+
+          transaction_records = ActiveRecord::Base.connection.current_transaction.records.uniq
+          assert_equal transaction_records.count, 1
+          assert_equal transaction_records.first.class, Topic
+        end
+      end
     end
   end
 
@@ -381,6 +391,18 @@ describe "#import" do
           assert_equal [val1, val2], scope.map(&column).sort
         end
 
+        it 'should add imported models to AR transaction.records' do
+          ActiveRecord::Base.transaction do
+            scope.import [
+              klass.new(column => val1),
+              klass.new(column => val2)
+            ]
+            transaction_records = ActiveRecord::Base.connection.current_transaction.records.uniq
+            assert_equal transaction_records.count, 2
+            assert_equal transaction_records.first.class, Discount
+          end
+        end
+
         it "works importing array of columns and values" do
           scope.import [column], [[val1], [val2]]
 
@@ -391,6 +413,22 @@ describe "#import" do
   end
 
   context 'When importing models with Enum fields' do
+    it 'should add imported models to AR transaction.records' do
+      ActiveRecord::Base.transaction do
+        Book.delete_all if Book.count > 0
+        books = [
+          Book.new(author_name: "Foo", title: "Baz", status: 0),
+          Book.new(author_name: "Foo2", title: "Baz2", status: 1),
+        ]
+        Book.import books
+
+        transaction_records = ActiveRecord::Base.connection.current_transaction.records.uniq
+
+        assert_equal transaction_records.count, 2
+        assert_equal transaction_records.first.class, Book
+      end
+    end
+
     it 'should be able to import enum fields' do
       Book.delete_all if Book.count > 0
       books = [
