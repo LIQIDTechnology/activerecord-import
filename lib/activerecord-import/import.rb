@@ -392,7 +392,7 @@ class ActiveRecord::Base
 
       # add to the transaction records array
       if models
-        models.each |model|
+        models.each do |model|
           current_transaction.add_record(model)
         end
       end
