@@ -309,7 +309,7 @@ class ActiveRecord::Base
     # * num_inserts - the number of insert statements it took to import the data
     # * ids - the primary keys of the imported ids, if the adpater supports it, otherwise and empty array.
     def import(*args)
-      ActiveRecord::Base.transaction do
+      transaction do
         if args.first.is_a?( Array ) && args.first.first.is_a?(ActiveRecord::Base)
           options = {}
           options.merge!( args.pop ) if args.last.is_a?(Hash)
@@ -393,7 +393,8 @@ class ActiveRecord::Base
       # add to the transaction records array
       if models
         models.each do |model|
-          current_transaction.add_record(model)
+          binding.pry
+          connection.current_transaction.add_record(model)
         end
       end
 
@@ -404,7 +405,7 @@ class ActiveRecord::Base
               model = model.dup if options[:recursive]
 
               if model.valid?(options[:validate_with_context])
-                current_transaction.add_record(model)
+                connection.current_transaction.add_record(model)
                 next
               end
               model.send(:raise_record_invalid) if options[:raise_error]
@@ -463,7 +464,7 @@ class ActiveRecord::Base
         arr.each_with_index do |hsh, i|
           hsh.each_pair { |k, v| model[k] = v }
           if model.valid?(options[:validate_with_context])
-            current_transaction.add_record(model)
+            connection.current_transaction.add_record(model)
             next
           end
           raise(ActiveRecord::RecordInvalid, model) if options[:raise_error]
