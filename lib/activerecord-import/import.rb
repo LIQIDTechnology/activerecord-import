@@ -309,14 +309,16 @@ class ActiveRecord::Base
     # * num_inserts - the number of insert statements it took to import the data
     # * ids - the primary keys of the imported ids, if the adpater supports it, otherwise and empty array.
     def import(*args)
-      if args.first.is_a?( Array ) && args.first.first.is_a?(ActiveRecord::Base)
-        options = {}
-        options.merge!( args.pop ) if args.last.is_a?(Hash)
+      transaction do
+        if args.first.is_a?( Array ) && args.first.first.is_a?(ActiveRecord::Base)
+          options = {}
+          options.merge!( args.pop ) if args.last.is_a?(Hash)
 
-        models = args.first
-        import_helper(models, options)
-      else
-        import_helper(*args)
+          models = args.first
+          import_helper(models, options)
+        else
+          import_helper(*args)
+        end
       end
     end
 
@@ -367,13 +369,13 @@ class ActiveRecord::Base
         # supports 2-element array and array
       elsif args.size == 2 && args.first.is_a?( Array ) && args.last.is_a?( Array )
         column_names, array_of_attributes = args
-        array_of_attributes = array_of_attributes.map(&:dup)
       else
         raise ArgumentError, "Invalid arguments!"
       end
 
       # dup the passed in array so we don't modify it unintentionally
       column_names = column_names.dup
+      array_of_attributes = array_of_attributes.dup
 
       # Force the primary key col into the insert if it's not
       # on the list and we are using a sequence and stuff a nil
@@ -388,23 +390,16 @@ class ActiveRecord::Base
         add_special_rails_stamps column_names, array_of_attributes, options
       end
 
-      # add to the transaction records array
-      if models
-        models.each do |model|
-          connection.current_transaction.add_record(model)
-        end
-      end
-
       return_obj = if is_validating
         if models
           import_with_validations( column_names, array_of_attributes, options ) do |failed|
             models.each_with_index do |model, i|
               model = model.dup if options[:recursive]
               if model.valid?(options[:validate_with_context])
-                current_transaction.records.add_record model.dup
-              elsif options[:raise_error]
-                raise(ActiveRecord::RecordInvalid, model)
+                connection.current_transaction.add_record(model)
+                next
               end
+              model.send(:raise_record_invalid) if options[:raise_error]
               array_of_attributes[i] = nil
               failed << model
             end
@@ -424,7 +419,7 @@ class ActiveRecord::Base
       return_obj.num_inserts = 0 if return_obj.num_inserts.nil?
 
       # if we have ids, then set the id on the models and mark the models as clean.
-      if models && support_setting_primary_key_of_imported_objects?
+      if support_setting_primary_key_of_imported_objects?
         set_ids_and_mark_clean(models, return_obj)
 
         # if there are auto-save associations on the models we imported that are new, import them as well
@@ -460,10 +455,10 @@ class ActiveRecord::Base
         arr.each_with_index do |hsh, i|
           hsh.each_pair { |k, v| model[k] = v }
           if model.valid?(options[:validate_with_context])
-            current_transaction.records.add_record model.dup
-          elsif options[:raise_error]
-            raise(ActiveRecord::RecordInvalid, model)
+            connection.current_transaction.add_record(model.dup)
+            next
           end
+          raise(ActiveRecord::RecordInvalid, model) if options[:raise_error]
           array_of_attributes[i] = nil
           failed_instances << model.dup
         end
@@ -559,7 +554,6 @@ class ActiveRecord::Base
       # notes:
       #    does not handle associations that reference themselves
       #    should probably take a hash to associations to follow.
-      return if models.nil?
       associated_objects_by_class = {}
       models.each { |model| find_associated_objects_for_import(associated_objects_by_class, model) }
 
