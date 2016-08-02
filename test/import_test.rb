@@ -152,7 +152,7 @@ describe "#import" do
           Topic.import columns, valid_values, all_or_none: true
 
           transaction_records = ActiveRecord::Base.connection.current_transaction.records.uniq
-          assert_equal transaction_records.count, 1
+          assert_equal transaction_records.count, 2
           assert_equal transaction_records.first.class, Topic
         end
       end
