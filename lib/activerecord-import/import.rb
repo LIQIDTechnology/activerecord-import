@@ -396,7 +396,7 @@ class ActiveRecord::Base
             models.each_with_index do |model, i|
               model = model.dup if options[:recursive]
               if model.valid?(options[:validate_with_context])
-                connection.current_transaction.add_record(model)
+                connection.current_transaction.add_record(model.dup)
                 next
               end
               model.send(:raise_record_invalid) if options[:raise_error]
